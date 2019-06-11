@@ -12,7 +12,7 @@ RUN pip install -r requirements.txt
 COPY arcanna/ .
 
 
-ENTRYPOINT["python"]
+ENTRYPOINT ["python"]
 
 CMD ["app.py"] 
 
