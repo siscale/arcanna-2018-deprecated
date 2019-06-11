@@ -1,0 +1,1 @@
+docker run -p 3000:3000 -e "CONFIG_PATH=app.config" -ti arcanna-latest
