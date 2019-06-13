@@ -1,4 +1,4 @@
-TOKEN="randomtoken"
+API_TOKEN="randomtoken"
 ES_ENDPOINT="localhost"
 ES_SCHEMA="https"
 ES_USER="user"
