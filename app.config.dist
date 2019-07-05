@@ -1,8 +1,9 @@
 API_TOKEN="randomtoken"
-ES_ENDPOINT="localhost"
+DEBUG_MODE=1
+ES_ENDPOINT="10.0.0.3"
 ES_SCHEMA="https"
 ES_USER="user"
 ES_PASS="password"
 BIND_IP="0.0.0.0"
 BIND_PORT="5000"
-
+TF_CLUSTER_SPEC="{\"worker\": [\"localhost:1112\"]}"
