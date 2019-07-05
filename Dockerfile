@@ -1,4 +1,4 @@
-FROM tensorflow/tensorflow
+FROM tensorflow/tensorflow:1.12.3
 
 MAINTAINER Siscale "dev@siscale.com"
 
