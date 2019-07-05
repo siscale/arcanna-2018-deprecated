@@ -1,1 +1,2 @@
-docker run -p 5000:5000 -e "CONFIG_PATH=app.config" -ti arcanna-latest
+docker network create arcanna-net
+docker run -p 11112:11112 -p 5000:5000 --net arcanna-net -e "CONFIG_PATH=app.config"  -ti arcanna:latest
