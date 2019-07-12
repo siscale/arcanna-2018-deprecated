@@ -1,6 +1,9 @@
 import tensorflow as tf
 from collections import namedtuple 
 import pandas as pd 
+from flask import current_app
+import numpy as np
+
 
 class TFNode():
         def __init__(self):
@@ -45,48 +48,70 @@ class TFNode():
 			return False
 		return True 
 
-	def build_nn(self,job_info,in_count,hidden_units=10, out_classes=2):
-		#tf.reset_default_graph()
-		    
-		inputs = tf.placeholder(tf.float32, shape=[None, in_count-1])
-		outputs = tf.placeholder(tf.float32, shape=[None, 2])
+	def get_model(self,job_info,in_count,hidden_units=10, out_classes=2, session=None, graph=None):
+		print("Total inputs:")
+		print(in_count)
+		inputs = tf.placeholder(tf.float32, shape=[None, in_count], name="inputs")
+		outputs = tf.placeholder(tf.float32, shape=[None, out_classes])
     
-		labels = tf.placeholder(tf.float32, shape=[None, 2])
-		learning_rate = tf.placeholder(tf.float32)
-		is_training = tf.Variable(True, dtype=tf.bool)
+		labels = tf.placeholder(tf.float32, shape=[None, out_classes], name="labels")
+		print(labels)
+		learning_rate = tf.placeholder(tf.float32, name="learning_rate")
+		is_training = tf.Variable(True, dtype=tf.bool, name="is_training")
     
 		initializer = tf.contrib.layers.xavier_initializer(uniform=False,seed=23)
-    
+   
 		fc = tf.layers.dense(inputs, hidden_units, activation=None, kernel_initializer=initializer)
 		fc = tf.layers.batch_normalization(fc, training=is_training)
 		fc = tf.nn.relu(fc)
     
-		logits = tf.layers.dense(fc, 2, activation=None)
+		logits = tf.layers.dense(fc, out_classes, activation=None)
 		cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits)
-		cost = tf.reduce_mean(cross_entropy)
-    	
+		cost = tf.reduce_mean(cross_entropy, name="cost")
+   	
 		with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-        		optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
-    
-		predicted = tf.nn.sigmoid(logits)
+			optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost, name="optimizer")
+		predicted = tf.nn.sigmoid(logits, name="predicted")
 		correct_pred = tf.equal(tf.round(predicted),labels)
-		accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
-    
-		export_nodes = ['inputs', 'labels', 'learning_rate','is_training', 'logits','cost', 'optimizer', 'predicted', 'accuracy']
-    
-		Graph = namedtuple('Graph', export_nodes)
-		local_dict = locals()
-		graph = Graph(*[local_dict[each] for each in export_nodes])
-    
-		return graph
+		accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32),name="accuracy")
 
+		tf.local_variables_initializer().run()
+		tf.global_variables_initializer().run()
+		print(inputs)
+		try:
+			saver = tf.train.Saver()
+			saver.restore(session,current_app.config["MODEL_DIR"]+"model_"+job_info["_id"]+".ckpt")
+		except Exception as e:
+			print("Could not restore model. using newly initialized one.")
+			print(e)
+		print(inputs)
+		
+    			
+		#export_nodes = ['inputs', 'labels', 'learning_rate','is_training', 'logits','cost', 'optimizer', 'predicted', 'accuracy']
+    
+		#Graph = namedtuple('Graph', export_nodes)
+		#local_dict = locals()
+		#graph = tf.Graph(*[local_dict[each] for each in export_nodes])
+    
+
+	def string_int(self,val):
+		result = np.zeros(100, dtype=int)
+		pos = 0 
+		for el in val:
+			result[pos] = ord(el)
+			pos += 1
+		return result
+		
 	def execute(self,job_id, action):
-		curent_model = None 
+
 		if self.server is None:
 			print("Issue on server init. Please check logs for remediation")
 		if self.node_type == "ps":
 			self.server.join()
 		elif self.node_type == "worker":
+			current_model = tf.Graph()
+	                tf_sess = tf.Session(target=self.server.target,graph=current_model)
+
 			# Load job info 
 			job_info = self.connector.get_job_info(job_id)
 			#print(job_info)
@@ -96,85 +121,137 @@ class TFNode():
 
 			# Load model or create a new one 
 			with tf.device(tf.train.replica_device_setter(worker_device='/job:worker/task:'+str(self.task_id), cluster=self.cluster_handle)) as tf_device:
-				print("Model time")
-				#graph = self.build_nn(job_info, in_count, hidden_count, out_count)
+				tf.reset_default_graph()
 				
-				with tf.Session(self.server.target) as tf_sess:
-					try:
-						saver = tf.train.Saver()
-							
-						saver.restore(tf_sess, "/opt/arcanna/models/model_"+str(job_id)+".ckpt")
-					except Exception as e:
-						print("Failed to restore model. Check if it exists")
-						print(e)
-						# No model available 
-						current_model = self.build_nn(job_info, in_count, hidden_count, out_count)		
-				# Train time ? 
-			if action == "TRAIN":
-				# Todo: Set status on job 
-				with tf.Session(self.server.target) as tf_sess:
-					print("Train time")
-					tf_sess.run(tf.global_variables_initializer())
-					saver = tf.train.Saver()
-    					iteration = 0
-    					for e in range(epochs):
-        					iteration +=1
-        					for batch_x, batch_y in get_batch(train_x, train_y, batch_size): 
-							feed = {
- 				                	model.inputs: train_x, 
-				                	model.labels: train_y,
-                					model.learning_rate: learning_rate,
-                					model.is_training: True
-				            		}
-				                	train_loss, _, train_acc = tf_sess.run([model.cost, model.optimizer, model.accuracy], feed_dict=feed)
+				print("Model time")				
+				with tf_sess:
+					self.get_model(job_info, in_count, hidden_count, out_count,tf_sess,current_model)
+					print(tf.trainable_variables())
+					# Train time ? 
+					if action == "TRAIN":
+						# Todo: Set status on job 
+						print("Train time")
+						print(current_model)
+						train_collect = 50
+						train_print= 50
+						epochs = 500 
+						learning_rate = 0.03
+  						iteration = 0
+						batch_size = 64 
 
-					                if iteration % train_collect == 0:
-					                	x_collect.append(e)
-                						train_loss_collect.append(train_loss)
-						                train_acc_collect.append(train_acc)
-            
-						        if iteration % train_print == 0:
-					        	        print("Epoch: {}/{}".format(e+1, epochs),
-                     							"Train loss: {:.4f}".format(train_loss),
-					                        	"Train accuracy: {:.4f}".format(train_acc))
-                    
-			elif action == "EVALUATE":
-				# Todo: Set status on job 
-				with tf.Session(self.server.target) as tf_sess:
-					tf.initialize_all_variables().run()
-					print("Process time") 
-					print(current_model)
+	    					for e in range(epochs):
+							from_pos = 0 
+							processed = False 
+        						iteration +=1
+							while processed is False:
+        							batch_x, batch_y = self.connector.next_batch(job_info,from_pos, batch_size, for_training=True)
+								df = pd.DataFrame.from_dict(batch_x)
+								df.fillna(0)
+       		                                        	# Keep for later on when we send back the data
+		                                                orig_df = pd.DataFrame.from_dict(batch_x)
 
-					
-					data = self.connector.next_batch(job_info,64) 					
-					df = pd.DataFrame.from_dict(data)
-
-					drop_columns = ['_id','_index','_type']
-				        df = df.drop(drop_columns,axis=1)
-
-				        self.input_count = len(df.columns)
-
-					
-				        # Generate the result column as random values from our class
-				        for col_name in df.columns:
-				        	try:
-          						if df[col_name].dtype == 'object':
-					             		df[col_name]= df[col_name].astype('category')
-             					     		df[col_name] = df[col_name].cat.codes
-       						except Exception as e:
-				        		print("{0}".format(e))
-
-					feed = {
-						current_model.inputs: df,
-						current_model.is_training: False 
-					}
-
-					print("Data:")
-					print(df)
-					print("Feed:")
-					print(feed)
-					result = tf_sess.run(current_model.predicted, feed)
-					print(result)
+        	       		                                drop_columns = ['_id','_index','_type']
+                	       		                        df = df.drop(drop_columns,axis=1)
+								#for col_name in df.columns:	
+								#	print(col_name)
+								#	if df[col_name].dtype == 'object':
+								#		df[col_name] = df[col_name].apply(lambda row: self.string_int(row) )
+ 
 	
-			# Todo: Set end status for job 
+	
+								if len(batch_x) == 0:
+									print("Finished processing batches for epoch {0}".format(e))
+									processed = True  
+									continue
+
+								print("Inputs:")
+								print(df)
+								print("Labels:")
+								print(batch_y)
+								df.fillna(0, inplace=True)
+								feed = {
+		 				                	"inputs:0": np.asarray(df).tolist(), 
+						                	"labels:0": np.asarray(batch_y.values).tolist(),
+               								"learning_rate:0": learning_rate,
+               								"is_training:0": True
+			        			    	}
+							
+					        	       	train_loss, _, train_acc = tf_sess.run(["cost:0", "optimizer", "accuracy:0"], feed_dict=feed)
+							        if iteration % train_collect == 0:
+							               	x_collect.append(e)
+               								train_loss_collect.append(train_loss)
+						                	train_acc_collect.append(train_acc)
+      							        if iteration % train_print == 0:
+					        		        print("Epoch: {}/{}".format(e+1, epochs),
+               									"Train loss: {:.4f}".format(train_loss),
+				                	        		"Train accuracy: {:.4f}".format(train_acc))
+								from_pos += batch_size 
+						
+						#with tf.device(tf.train.replica_device_setter(worker_device='/job:wo$
+			                        print("Saving model for '{0}'".format(job_info["_id"]))
+
+						#                                with tf_sess:
+	                                        try:
+        	                                        saver = tf.train.Saver()
+
+                	                                saver.save(tf_sess, current_app.config["MODEL_DIR"]+"model_"+job_info["_id"].lower()+".ckpt")
+
+                      	                  	except Exception as e:
+                                                	print("Failed to save model. Check if there are enough permissions")
+
+	                                                print(e)
+                    
+					elif action == "EVALUATE":
+						# Todo: Set status on job 
+						self.connector.set_job_status(job_info,"EVALUATING")
+						tf_sess.run(tf.global_variables_initializer())
+						print("Process time") 
+						#print(current_model)
+						
+						from_pos = 0 
+						if "batch_pos" in job_info.keys():
+							from_pos = job_info["batch_pos"] 
+						batch_size = 64 
+						processed = False
+						while processed is False:
+							data = self.connector.next_batch(job_info, from_pos, batch_size) 		
+							print("Data count: {0}".format(len(data)))
+							if len(data) == 0:
+								print("Finished processing") 
+								processed = True
+								continue 
+							df = pd.DataFrame.from_dict(data) 
+							df.fillna(0)
+							# Keep for later on when we send back the data 
+							orig_df = pd.DataFrame.from_dict(data)
+	
+							drop_columns = ['_id','_index','_type']
+					        	df = df.drop(drop_columns,axis=1)
+
+	
+							#print(df)
+						        # Generate the result column as random values from our class
+						        #for col_name in df.columns:
+          						#	if df[col_name].dtype == 'object':
+							#		df[col_name] = df[col_name].apply(lambda row: self.string_int(row))
+
+							feed = {
+								"inputs:0": df,
+								"is_training:0": False 
+							}
+
+							result = tf_sess.run("predicted:0", feed)
+							result = np.nan_to_num(result,True)
+
+							df["model_result"] = result.tolist() 
+							df["source_index"] = orig_df["_index"] 
+							df["doc_id"] = orig_df["_id"] 	
+							df["doc_type"] = orig_df["_type"]	
+							# Save results back in Elasticsearch 
+							self.connector.push_evaluation(df, job_info, for_training=False)
+		
+							from_pos += batch_size 
+						# Set job status to idle
+                                	        self.connector.set_job_status(job_info, "IDLE")
+
 

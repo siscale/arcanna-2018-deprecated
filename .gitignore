@@ -2,4 +2,7 @@
 *.save
 *.bak
 test
-app.config 
+arcanna/app.config 
+*/app.config
+./models
+*.save.*
