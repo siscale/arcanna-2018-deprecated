@@ -212,6 +212,7 @@ class ConnectorElasticsearch():
 				new_doc = {
           				"source_index"  : str(row['source_index']),
           				"model_result": row['model_result'],
+					"original_id": row["doc_id"],
           				"tags": []
        				}
 
@@ -231,5 +232,5 @@ class ConnectorElasticsearch():
 				target_index = '.arcanna-job-'+job_info["_id"].lower()
 				print(target_index)
 				print(row.to_dict())
-       				res = self.es_handle.index(index=target_index, doc_type=row['doc_type'],id=row['doc_id'],body=new_doc)
+       				res = self.es_handle.index(index=target_index, doc_type=row['doc_type'],body=new_doc)
 
