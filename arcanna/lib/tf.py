@@ -54,46 +54,42 @@ class TFNode():
 		inputs = tf.placeholder(tf.float32, shape=[None, in_count], name="inputs")
 		outputs = tf.placeholder(tf.float32, shape=[None, out_classes])
     
+		print(inputs)
+
 		labels = tf.placeholder(tf.float32, shape=[None, out_classes], name="labels")
-		print(labels)
 		learning_rate = tf.placeholder(tf.float32, name="learning_rate")
-		is_training = tf.Variable(True, dtype=tf.bool, name="is_training")
+		is_training = tf.placeholder(dtype=tf.bool, name="is_training")
     
-		initializer = tf.contrib.layers.xavier_initializer(uniform=False,seed=23)
+		initializer = tf.contrib.layers.xavier_initializer()
    
-		fc = tf.layers.dense(inputs, hidden_units, activation=None, kernel_initializer=initializer)
-		fc = tf.layers.batch_normalization(fc, training=is_training)
-		fc = tf.nn.relu(fc)
+		fc = tf.layers.dense(inputs, hidden_units, activation=None, kernel_initializer=initializer, name="dense_1")
+		fc = tf.layers.batch_normalization(fc, training=is_training, name="normalization")
+		fc = tf.nn.relu(fc, name="relu")
     
-		logits = tf.layers.dense(fc, out_classes, activation=None)
-		cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits)
+		logits = tf.layers.dense(fc, out_classes, activation=None, name="logits")
+		cross_entropy = tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits, name="cross_entropy")
 		cost = tf.reduce_mean(cross_entropy, name="cost")
    	
-		with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-			optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost, name="optimizer")
+		with tf.variable_scope(str(in_count)):
+			adam = tf.train.AdamOptimizer(learning_rate=learning_rate, name="adam")
+			print(adam)
+
+			optimizer = adam.minimize(cost, name="optimizer-"+str(in_count))
+		print(optimizer)
 		predicted = tf.nn.sigmoid(logits, name="predicted")
 		correct_pred = tf.equal(tf.round(predicted),labels)
 		accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32),name="accuracy")
 
-		tf.local_variables_initializer().run()
 		tf.global_variables_initializer().run()
-		print(inputs)
+
 		try:
-			saver = tf.train.Saver()
-			saver.restore(session,current_app.config["MODEL_DIR"]+"model_"+job_info["_id"]+".ckpt")
+			saver = tf.train.Saver(tf.all_variables(),reshape=True)
+			saver.restore(session,current_app.config["MODEL_DIR"]+job_info["_id"]+"/model.ckpt")
 		except Exception as e:
 			print("Could not restore model. using newly initialized one.")
 			print(e)
 		print(inputs)
 		
-    			
-		#export_nodes = ['inputs', 'labels', 'learning_rate','is_training', 'logits','cost', 'optimizer', 'predicted', 'accuracy']
-    
-		#Graph = namedtuple('Graph', export_nodes)
-		#local_dict = locals()
-		#graph = tf.Graph(*[local_dict[each] for each in export_nodes])
-    
-
 	def string_int(self,val):
 		result = np.zeros(100, dtype=int)
 		pos = 0 
@@ -111,7 +107,7 @@ class TFNode():
 		elif self.node_type == "worker":
 			current_model = tf.Graph()
 	                tf_sess = tf.Session(target=self.server.target,graph=current_model)
-
+			tf.reset_default_graph()
 			# Load job info 
 			job_info = self.connector.get_job_info(job_id)
 			#print(job_info)
@@ -121,7 +117,6 @@ class TFNode():
 
 			# Load model or create a new one 
 			with tf.device(tf.train.replica_device_setter(worker_device='/job:worker/task:'+str(self.task_id), cluster=self.cluster_handle)) as tf_device:
-				tf.reset_default_graph()
 				
 				print("Model time")				
 				with tf_sess:
@@ -132,18 +127,20 @@ class TFNode():
 						# Todo: Set status on job 
 						print("Train time")
 						print(current_model)
-						train_collect = 50
-						train_print= 50
-						epochs = 500 
+						train_collect = 1
+						train_print= 1
+						epochs = 1 
 						learning_rate = 0.03
   						iteration = 0
 						batch_size = 64 
-
+						x_collect, train_loss_collect, train_acc_collect = [], [], []
 	    					for e in range(epochs):
+							print("Epoch {0}".format(e))
 							from_pos = 0 
 							processed = False 
         						iteration +=1
 							while processed is False:
+								print("Batch process from {0} to {1}".format(from_pos,from_pos+batch_size))
         							batch_x, batch_y = self.connector.next_batch(job_info,from_pos, batch_size, for_training=True)
 								df = pd.DataFrame.from_dict(batch_x)
 								df.fillna(0)
@@ -159,16 +156,21 @@ class TFNode():
  
 	
 	
+								
 								if len(batch_x) == 0:
 									print("Finished processing batches for epoch {0}".format(e))
 									processed = True  
 									continue
 
-								print("Inputs:")
-								print(df)
-								print("Labels:")
-								print(batch_y)
+								#print("Inputs:")
+								#print(df)
+								#print("Labels:")
+								#print(batch_y)
 								df.fillna(0, inplace=True)
+								if len(df) != len(batch_y):
+									print("Skipping batch because of length diff")
+									processed = True
+									continue
 								feed = {
 		 				                	"inputs:0": np.asarray(df).tolist(), 
 						                	"labels:0": np.asarray(batch_y.values).tolist(),
@@ -176,7 +178,7 @@ class TFNode():
                								"is_training:0": True
 			        			    	}
 							
-					        	       	train_loss, _, train_acc = tf_sess.run(["cost:0", "optimizer", "accuracy:0"], feed_dict=feed)
+					        	       	train_loss, _, train_acc = tf_sess.run(["cost:0", "optimizer"+str(in_count), "accuracy:0"], feed_dict=feed)
 							        if iteration % train_collect == 0:
 							               	x_collect.append(e)
                								train_loss_collect.append(train_loss)
@@ -192,9 +194,9 @@ class TFNode():
 
 						#                                with tf_sess:
 	                                        try:
-        	                                        saver = tf.train.Saver()
+        	                                        saver = tf.train.Saver(reshape=True)
 
-                	                                saver.save(tf_sess, current_app.config["MODEL_DIR"]+"model_"+job_info["_id"].lower()+".ckpt")
+                	                                saver.save(tf_sess, current_app.config["MODEL_DIR"]+job_info["_id"]+"/model.ckpt")
 
                       	                  	except Exception as e:
                                                 	print("Failed to save model. Check if there are enough permissions")
@@ -253,5 +255,4 @@ class TFNode():
 							from_pos += batch_size 
 						# Set job status to idle
                                 	        self.connector.set_job_status(job_info, "IDLE")
-
 
