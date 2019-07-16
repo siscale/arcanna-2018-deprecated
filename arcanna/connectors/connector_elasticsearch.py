@@ -48,16 +48,16 @@ class ConnectorElasticsearch():
 						temp_val = ""
 						result = {} 
 					if map_row["field"].find('.') != -1:
-						print("Found nested field while creating mapping")
+						#print("Found nested field while creating mapping")
 						
 						field_mapping[map_row['field'].split('.')[0]] = "_".join(map_row["newName"].split('.'))
 					else:
-						print("Remapping {0} {1} ".format(map_row['field'], map_row['newName']))
+						#print("Remapping {0} {1} ".format(map_row['field'], map_row['newName']))
 						field_mapping[map_row['field'].split('.')[0]] = map_row['newName']
 				        # Remap
        				rows = data['records'][index]	
-				print("Mapping ")
-				print(field_mapping)
+				#print("Mapping ")
+				#print(field_mapping)
 				for row in rows:
           				new_row = {}
 			        	temp_id = row['_id']
@@ -66,18 +66,18 @@ class ConnectorElasticsearch():
 				        row = row['_source']
 
           				for k in row:
-						print("Saving field {0}".format(k))
+						#print("Saving field {0}".format(k))
 		             			if k in field_mapping:
-							print(row[k])
+							#print(row[k])
 							if isinstance(row[k],dict):
-								print("Found nested")
-								print(row[k])
+								#print("Found nested")
+								#print(row[k])
 								inner_key = row[k].keys()[0] 
 								new_row[field_mapping[k]] = row[k][inner_key]
 							else:
        	        						new_row[field_mapping[k]] = row[k]
 		        			else:
-							print("Not in mapping : {0} ".format(k))
+							#print("Not in mapping : {0} ".format(k))
        			        			new_row[k] = row[k]
 		
 		        		new_row['_id'] = temp_id
@@ -200,7 +200,8 @@ class ConnectorElasticsearch():
 	             				}	
 		          		}
        				}
-			
+				print(doc)
+				print(row)
 				self.es_handle.update(index=row['source_index'], doc_type=row['doc_type'], id=row["doc_id"], body=doc)
 				# Todo:  This should be moved 
 				self.es_handle.indices.refresh(index=row["source_index"])
