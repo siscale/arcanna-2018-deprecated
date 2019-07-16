@@ -1,0 +1,8 @@
+*.pyc
+*.save
+*.bak
+test
+arcanna/app.config 
+*/app.config
+./models
+*.save.*

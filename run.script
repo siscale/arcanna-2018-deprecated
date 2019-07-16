@@ -1,0 +1,3 @@
+docker network create arcanna-net
+docker run -v "$(pwd)"/models:/opt/arcanna/models -p 11112:11112 -p 5000:5000 --net arcanna-net -e "CONFIG_PATH=app.config"  -ti arcanna:latest 
+

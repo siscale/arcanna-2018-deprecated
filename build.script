@@ -1,0 +1,3 @@
+
+docker rmi arcanna:latest
+docker build -t arcanna:latest .

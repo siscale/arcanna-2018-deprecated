@@ -1,0 +1,1 @@
+CONFIG_PATH=app.config python arcanna/app.py 

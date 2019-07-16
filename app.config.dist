@@ -1,0 +1,10 @@
+API_TOKEN="randomtoken"
+DEBUG_MODE=1
+ES_ENDPOINT="localhost"
+ES_SCHEMA="https"
+ES_USER="user"
+ES_PASS="password"
+BIND_IP="0.0.0.0"
+BIND_PORT="5000"
+TF_CLUSTER_SPEC="{\"worker\": [\"localhost:1112\"]}"
+MODEL_DIR="./models/"
